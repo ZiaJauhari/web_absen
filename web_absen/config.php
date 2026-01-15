@@ -36,9 +36,19 @@ function getCurrentUser() {
 }
 
 // Function to check if location is within allowed area
-function isLocationAllowed($lat, $lng, $allowedLat, $allowedLng, $radiusKm = 0.001) {
+function isLocationAllowed($lat, $lng, $allowedLat, $allowedLng, $radiusKm = 0.1) {
     if ($allowedLat === null || $allowedLng === null) {
         return true; // No location restriction
+    }
+
+    // Validate input coordinates
+    if (!is_numeric($lat) || !is_numeric($lng) || !is_numeric($allowedLat) || !is_numeric($allowedLng)) {
+        return false;
+    }
+
+    // Check if coordinates are within valid range
+    if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+        return false;
     }
 
     $earthRadius = 6371; // km
@@ -55,4 +65,35 @@ function isLocationAllowed($lat, $lng, $allowedLat, $allowedLng, $radiusKm = 0.0
 
     return $distance <= $radiusKm;
 }
+
+// Function to format date in Indonesian
+function formatDateIndo($date) {
+    $months = [
+        1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    
+    $timestamp = strtotime($date);
+    $day = date('d', $timestamp);
+    $month = $months[(int)date('m', $timestamp)];
+    $year = date('Y', $timestamp);
+    
+    return "$day $month $year";
+}
+
+// Function to sanitize input
+function sanitizeInput($data) {
+    $data = trim($data);
+    $data = stripslashes($data);
+    $data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
+    return $data;
+}
+
+// Function to validate email
+function isValidEmail($email) {
+    return filter_var($email, FILTER_VALIDATE_EMAIL);
+}
+
+// Set timezone
+date_default_timezone_set('Asia/Jakarta');
 ?>
