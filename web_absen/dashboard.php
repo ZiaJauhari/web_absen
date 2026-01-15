@@ -7,16 +7,35 @@ if (!isLoggedIn()) {
 }
 
 $user = getCurrentUser();
-$message = '';
+$flash = getFlash();
+
+function redirectDashboard(): void {
+    header('Location: dashboard.php');
+    exit();
+}
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
-    $lat = $_POST['lat'];
-    $lng = $_POST['lng'];
+    $lat = $_POST['lat'] ?? null;
+    $lng = $_POST['lng'] ?? null;
+
+    if ($action !== 'checkin' && $action !== 'checkout') {
+        setFlash('Aksi tidak valid.', 'danger');
+        redirectDashboard();
+    }
+
+    if (!is_numeric($lat) || !is_numeric($lng)) {
+        setFlash('Gagal mendapatkan lokasi. Pastikan izin lokasi aktif.', 'danger');
+        redirectDashboard();
+    }
+
+    $lat = (float) $lat;
+    $lng = (float) $lng;
 
     // Check if location is allowed
     if (!isLocationAllowed($lat, $lng, $user['location_lat'], $user['location_lng'])) {
-        $message = 'Absen hanya bisa dilakukan di area yang ditentukan.';
+        setFlash('Absen hanya bisa dilakukan di area yang ditentukan.', 'danger');
+        redirectDashboard();
     } else {
         $today = date('Y-m-d');
         $now = date('Y-m-d H:i:s');
@@ -33,22 +52,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
             if ($action == 'checkin') {
                 $sql = "INSERT INTO attendance (employee_id, check_in, date, location_lat, location_lng) VALUES (?, ?, ?, ?, ?)";
                 $stmt = $conn->prepare($sql);
-                $stmt->bind_param("issss", $user['id'], $now, $today, $lat, $lng);
-                $stmt->execute();
-                $message = 'Berhasil check in pada ' . date('H:i:s', strtotime($now));
+                $stmt->bind_param("issdd", $user['id'], $now, $today, $lat, $lng);
+                if ($stmt->execute()) {
+                    setFlash('Berhasil check in pada ' . date('H:i:s', strtotime($now)) . '.', 'success');
+                } else {
+                    setFlash('Gagal check in. Coba lagi.', 'danger');
+                }
+                redirectDashboard();
+            } else {
+                setFlash('Anda belum check in hari ini.', 'warning');
+                redirectDashboard();
             }
         } else {
             $attendance = $result->fetch_assoc();
             if ($action == 'checkout' && $attendance['check_out'] == null) {
                 $sql = "UPDATE attendance SET check_out = ?, location_lat = ?, location_lng = ? WHERE id = ?";
                 $stmt = $conn->prepare($sql);
-                $stmt->bind_param("sssi", $now, $lat, $lng, $attendance['id']);
-                $stmt->execute();
-                $message = 'Berhasil check out pada ' . date('H:i:s', strtotime($now));
+                $stmt->bind_param("sddi", $now, $lat, $lng, $attendance['id']);
+                if ($stmt->execute()) {
+                    setFlash('Berhasil check out pada ' . date('H:i:s', strtotime($now)) . '.', 'success');
+                } else {
+                    setFlash('Gagal check out. Coba lagi.', 'danger');
+                }
+                redirectDashboard();
             } elseif ($action == 'checkin') {
-                $message = 'Anda sudah check in hari ini.';
+                setFlash('Anda sudah check in hari ini.', 'info');
+                redirectDashboard();
             } else {
-                $message = 'Anda sudah check out hari ini.';
+                setFlash('Anda sudah check out hari ini.', 'info');
+                redirectDashboard();
             }
         }
     }
@@ -84,11 +116,15 @@ $attendance = $stmt->get_result()->fetch_assoc();
     </nav>
 
     <div class="container mt-4">
-        <h2>Selamat datang, <?php echo htmlspecialchars($user['name']); ?></h2>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h2 class="mb-0">Selamat datang, <?php echo e($user['name']); ?></h2>
+            <div class="text-muted small">Hari ini: <?php echo date('d/m/Y'); ?></div>
+        </div>
 
-        <?php if ($message): ?>
-            <div class="alert alert-info"><?php echo $message; ?></div>
-            <script>alert('<?php echo addslashes($message); ?>');</script>
+        <?php if ($flash): ?>
+            <div class="alert alert-<?php echo e($flash['type']); ?> shadow-sm" role="alert">
+                <?php echo e($flash['message']); ?>
+            </div>
         <?php endif; ?>
 
         <div class="row">
@@ -98,8 +134,8 @@ $attendance = $stmt->get_result()->fetch_assoc();
                         <h5>Status Absen Hari Ini</h5>
                     </div>
                     <div class="card-body">
-                        <p><strong>Check In:</strong> <?php echo $attendance ? date('H:i:s', strtotime($attendance['check_in'])) : 'Belum'; ?></p>
-                        <p><strong>Check Out:</strong> <?php echo $attendance && $attendance['check_out'] ? date('H:i:s', strtotime($attendance['check_out'])) : 'Belum'; ?></p>
+                        <p class="mb-2"><strong>Check In:</strong> <?php echo $attendance && $attendance['check_in'] ? date('H:i:s', strtotime($attendance['check_in'])) : 'Belum'; ?></p>
+                        <p class="mb-0"><strong>Check Out:</strong> <?php echo $attendance && $attendance['check_out'] ? date('H:i:s', strtotime($attendance['check_out'])) : 'Belum'; ?></p>
                     </div>
                 </div>
             </div>
@@ -109,8 +145,15 @@ $attendance = $stmt->get_result()->fetch_assoc();
                         <h5>Aksi Absen</h5>
                     </div>
                     <div class="card-body">
-                        <button id="checkin-btn" class="btn btn-success me-2" <?php echo $attendance && $attendance['check_in'] ? 'disabled' : ''; ?>>Check In</button>
-                        <button id="checkout-btn" class="btn btn-danger" <?php echo !$attendance || !$attendance['check_in'] || $attendance['check_out'] ? 'disabled' : ''; ?>>Check Out</button>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button id="checkin-btn" class="btn btn-success" <?php echo $attendance && $attendance['check_in'] ? 'disabled' : ''; ?>>
+                                Check In
+                            </button>
+                            <button id="checkout-btn" class="btn btn-danger" <?php echo !$attendance || !$attendance['check_in'] || $attendance['check_out'] ? 'disabled' : ''; ?>>
+                                Check Out
+                            </button>
+                            <div id="geo-status" class="text-muted small align-self-center"></div>
+                        </div>
                     </div>
                 </div>
             </div>

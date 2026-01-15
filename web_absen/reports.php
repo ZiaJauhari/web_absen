@@ -41,7 +41,10 @@ while ($row = $result->fetch_assoc()) {
     </nav>
 
     <div class="container mt-4">
-        <h2>Laporan Absen - <?php echo htmlspecialchars($user['name']); ?></h2>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <h2 class="mb-0">Laporan Absen</h2>
+            <div class="text-muted"><?php echo e($user['name']); ?></div>
+        </div>
 
         <div class="card">
             <div class="card-header">
@@ -76,6 +79,11 @@ while ($row = $result->fetch_assoc()) {
                                 </td>
                             </tr>
                         <?php endforeach; ?>
+                        <?php if (count($attendances) === 0): ?>
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">Belum ada data absen.</td>
+                            </tr>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>

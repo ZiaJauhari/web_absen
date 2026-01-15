@@ -14,8 +14,8 @@ if (isLoggedIn()) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $email = $_POST['email'];
-    $password = $_POST['password'];
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
 
     $sql = "SELECT * FROM employees WHERE email = ?";
     $stmt = $conn->prepare($sql);
@@ -61,12 +61,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </div>
                     <div class="card-body">
                         <?php if ($error): ?>
-                            <div class="alert alert-danger"><?php echo $error; ?></div>
+                            <div class="alert alert-danger shadow-sm" role="alert"><?php echo e($error); ?></div>
                         <?php endif; ?>
                         <form method="POST">
                             <div class="mb-3">
                                 <label for="email" class="form-label">Email</label>
-                                <input type="email" class="form-control" id="email" name="email" required>
+                                <input type="email" class="form-control" id="email" name="email" value="<?php echo e($email ?? ''); ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="password" class="form-label">Password</label>

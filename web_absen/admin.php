@@ -12,25 +12,68 @@ if ($user['role'] != 'admin') {
     exit();
 }
 
-$message = '';
+$flash = getFlash();
 
 // Handle add employee
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_employee'])) {
-    $name = $_POST['name'];
-    $email = $_POST['email'];
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
     $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
     $role = $_POST['role'];
-    $lat = $_POST['lat'] ?: null;
-    $lng = $_POST['lng'] ?: null;
 
-    $sql = "INSERT INTO employees (name, email, password, role, location_lat, location_lng) VALUES (?, ?, ?, ?, ?, ?)";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ssssdd", $name, $email, $password, $role, $lat, $lng);
-    if ($stmt->execute()) {
-        $message = 'Karyawan berhasil ditambahkan.';
-    } else {
-        $message = 'Gagal menambahkan karyawan.';
+    $hasLat = isset($_POST['lat']) && trim($_POST['lat']) !== '';
+    $hasLng = isset($_POST['lng']) && trim($_POST['lng']) !== '';
+
+    if ($hasLat xor $hasLng) {
+        setFlash('Latitude dan longitude harus diisi lengkap (keduanya).', 'warning');
+        header('Location: admin.php');
+        exit();
     }
+
+    $lat = $hasLat ? (float) $_POST['lat'] : null;
+    $lng = $hasLng ? (float) $_POST['lng'] : null;
+
+    if ($name === '' || $email === '') {
+        setFlash('Nama dan email wajib diisi.', 'warning');
+        header('Location: admin.php');
+        exit();
+    }
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        setFlash('Format email tidak valid.', 'warning');
+        header('Location: admin.php');
+        exit();
+    }
+
+    if ($role !== 'employee' && $role !== 'admin') {
+        setFlash('Role tidak valid.', 'warning');
+        header('Location: admin.php');
+        exit();
+    }
+
+    if ($lat === null || $lng === null) {
+        $sql = "INSERT INTO employees (name, email, password, role, location_lat, location_lng) VALUES (?, ?, ?, ?, NULL, NULL)";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ssss", $name, $email, $password, $role);
+    } else {
+        $sql = "INSERT INTO employees (name, email, password, role, location_lat, location_lng) VALUES (?, ?, ?, ?, ?, ?)";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ssssdd", $name, $email, $password, $role, $lat, $lng);
+    }
+
+    if ($stmt->execute()) {
+        setFlash('Karyawan berhasil ditambahkan.', 'success');
+    } else {
+        // Duplicate email is the most common failure.
+        if ($conn->errno === 1062) {
+            setFlash('Email sudah terdaftar. Gunakan email lain.', 'warning');
+        } else {
+            setFlash('Gagal menambahkan karyawan.', 'danger');
+        }
+    }
+
+    header('Location: admin.php');
+    exit();
 }
 
 // Get all employees
@@ -64,8 +107,8 @@ $attendances = $conn->query($sql);
     <div class="container mt-4">
         <h2>Admin Panel</h2>
 
-        <?php if ($message): ?>
-            <div class="alert alert-info"><?php echo $message; ?></div>
+        <?php if ($flash): ?>
+            <div class="alert alert-<?php echo e($flash['type']); ?> shadow-sm" role="alert"><?php echo e($flash['message']); ?></div>
         <?php endif; ?>
 
         <div class="row">
@@ -125,8 +168,8 @@ $attendances = $conn->query($sql);
                             <tbody>
                                 <?php while ($emp = $employees->fetch_assoc()): ?>
                                     <tr>
-                                        <td><?php echo htmlspecialchars($emp['name']); ?></td>
-                                        <td><?php echo htmlspecialchars($emp['email']); ?></td>
+                                        <td><?php echo e($emp['name']); ?></td>
+                                        <td><?php echo e($emp['email']); ?></td>
                                         <td><?php echo ucfirst($emp['role']); ?></td>
                                     </tr>
                                 <?php endwhile; ?>

@@ -13,8 +13,31 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
+$conn->set_charset('utf8mb4');
+
 // Start session
 session_start();
+
+function setFlash(string $message, string $type = 'info'): void {
+    $_SESSION['_flash'] = [
+        'message' => $message,
+        'type' => $type,
+    ];
+}
+
+function getFlash(): ?array {
+    if (!isset($_SESSION['_flash'])) {
+        return null;
+    }
+
+    $flash = $_SESSION['_flash'];
+    unset($_SESSION['_flash']);
+    return $flash;
+}
+
+function e(?string $value): string {
+    return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+}
 
 // Function to check if user is logged in
 function isLoggedIn() {
@@ -36,9 +59,13 @@ function getCurrentUser() {
 }
 
 // Function to check if location is within allowed area
-function isLocationAllowed($lat, $lng, $allowedLat, $allowedLng, $radiusKm = 0.001) {
-    if ($allowedLat === null || $allowedLng === null) {
+function isLocationAllowed($lat, $lng, $allowedLat, $allowedLng, $radiusKm = 0.1) {
+    if ($allowedLat === null || $allowedLng === null || $allowedLat === '' || $allowedLng === '') {
         return true; // No location restriction
+    }
+
+    if (!is_numeric($lat) || !is_numeric($lng)) {
+        return false;
     }
 
     $earthRadius = 6371; // km
