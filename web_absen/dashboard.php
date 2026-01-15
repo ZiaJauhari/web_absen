@@ -8,6 +8,7 @@ if (!isLoggedIn()) {
 
 $user = getCurrentUser();
 $message = '';
+$messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
@@ -17,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     // Check if location is allowed
     if (!isLocationAllowed($lat, $lng, $user['location_lat'], $user['location_lng'])) {
         $message = 'Absen hanya bisa dilakukan di area yang ditentukan.';
+        $messageType = 'error';
     } else {
         $today = date('Y-m-d');
         $now = date('Y-m-d H:i:s');
@@ -36,6 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 $stmt->bind_param("issss", $user['id'], $now, $today, $lat, $lng);
                 $stmt->execute();
                 $message = 'Berhasil check in pada ' . date('H:i:s', strtotime($now));
+                $messageType = 'success';
             }
         } else {
             $attendance = $result->fetch_assoc();
@@ -45,12 +48,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 $stmt->bind_param("sssi", $now, $lat, $lng, $attendance['id']);
                 $stmt->execute();
                 $message = 'Berhasil check out pada ' . date('H:i:s', strtotime($now));
+                $messageType = 'success';
             } elseif ($action == 'checkin') {
                 $message = 'Anda sudah check in hari ini.';
+                $messageType = 'error';
             } else {
                 $message = 'Anda sudah check out hari ini.';
+                $messageType = 'error';
             }
         }
+    }
+
+    // Return JSON for AJAX requests
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
+        header('Content-Type: application/json');
+        echo json_encode(['message' => $message, 'type' => $messageType]);
+        exit();
     }
 }
 
@@ -61,6 +74,17 @@ $stmt = $conn->prepare($sql);
 $stmt->bind_param("is", $user['id'], $today);
 $stmt->execute();
 $attendance = $stmt->get_result()->fetch_assoc();
+
+// Calculate working hours
+$workingHours = 0;
+$workingMinutes = 0;
+if ($attendance && $attendance['check_in']) {
+    $checkin_time = strtotime($attendance['check_in']);
+    $current_time = $attendance['check_out'] ? strtotime($attendance['check_out']) : time();
+    $duration = $current_time - $checkin_time;
+    $workingHours = floor($duration / 3600);
+    $workingMinutes = floor(($duration % 3600) / 60);
+}
 ?>
 
 <!DOCTYPE html>
@@ -68,105 +92,127 @@ $attendance = $stmt->get_result()->fetch_assoc();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Sistem Absen Karyawan</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>Attendance - Kolabo App</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container">
-            <a class="navbar-brand" href="#">Sistem Absen</a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="reports.php">Laporan</a>
-                <a class="nav-link" href="logout.php">Logout</a>
-            </div>
-        </div>
-    </nav>
-
-    <div class="container mt-4">
-        <div class="row mb-4">
-            <div class="col">
-                <h2 class="text-white">Selamat datang, <?php echo htmlspecialchars($user['name']); ?></h2>
-            </div>
-        </div>
-
-        <?php if ($message): ?>
-            <div class="alert alert-info alert-dismissible fade show" role="alert">
-                <strong>Informasi:</strong> <?php echo htmlspecialchars($message); ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        <?php endif; ?>
-
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Status Absen Hari Ini</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="status-info mb-3">
-                            <p class="mb-2"><strong>Tanggal:</strong> <?php echo date('d/m/Y'); ?></p>
-                            <p class="mb-2"><strong>Check In:</strong>
-                                <?php
-                                if ($attendance && $attendance['check_in']) {
-                                    echo '<span class="badge bg-success">' . date('H:i:s', strtotime($attendance['check_in'])) . '</span>';
-                                } else {
-                                    echo '<span class="badge bg-secondary">Belum Check In</span>';
-                                }
-                                ?>
-                            </p>
-                            <p class="mb-0"><strong>Check Out:</strong>
-                                <?php
-                                if ($attendance && $attendance['check_out']) {
-                                    echo '<span class="badge bg-danger">' . date('H:i:s', strtotime($attendance['check_out'])) . '</span>';
-                                } else {
-                                    echo '<span class="badge bg-secondary">Belum Check Out</span>';
-                                }
-                                ?>
-                            </p>
-                        </div>
-                        <?php if ($attendance && $attendance['check_in'] && $attendance['check_out']):
-                            $checkin_time = strtotime($attendance['check_in']);
-                            $checkout_time = strtotime($attendance['check_out']);
-                            $duration = $checkout_time - $checkin_time;
-                            $hours = floor($duration / 3600);
-                            $minutes = floor(($duration % 3600) / 60);
-                        ?>
-                        <div class="alert alert-success mb-0">
-                            <strong>Durasi Kerja:</strong> <?php echo $hours; ?> jam <?php echo $minutes; ?> menit
-                        </div>
-                        <?php endif; ?>
-                    </div>
+<body class="attendance-page">
+    <div class="attendance-container">
+        <!-- Header with User Profile -->
+        <header class="attendance-header">
+            <div class="user-profile">
+                <div class="user-avatar">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div class="user-info">
+                    <h2 class="user-name"><?php echo htmlspecialchars($user['name']); ?></h2>
+                    <p class="user-email"><?php echo htmlspecialchars($user['email']); ?></p>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Aksi Absen</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-grid gap-2">
-                            <button id="checkin-btn" class="btn btn-success btn-lg" <?php echo $attendance && $attendance['check_in'] ? 'disabled' : ''; ?>>
-                                <span class="btn-text">Check In</span>
-                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                            </button>
-                            <button id="checkout-btn" class="btn btn-danger btn-lg" <?php echo !$attendance || !$attendance['check_in'] || $attendance['check_out'] ? 'disabled' : ''; ?>>
-                                <span class="btn-text">Check Out</span>
-                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                            </button>
-                        </div>
-                        <div class="mt-3">
-                            <small class="text-muted">
-                                Pastikan lokasi Anda aktif dan Anda berada di area yang ditentukan.
-                            </small>
-                        </div>
-                    </div>
-                </div>
+            <button class="notification-btn" onclick="window.location.href='menu.php'">
+                <i class="fas fa-bars"></i>
+            </button>
+        </header>
+
+        <!-- Company Logo -->
+        <div class="company-logo">
+            <div class="logo-icon">
+                <i class="fas fa-building"></i>
             </div>
         </div>
+
+        <!-- Real-time Clock -->
+        <div class="clock-display">
+            <div class="current-time" id="current-time">00:00:00</div>
+            <div class="current-date" id="current-date">Loading...</div>
+        </div>
+
+        <!-- Fingerprint Check In/Out Button -->
+        <div class="fingerprint-section">
+            <button class="fingerprint-btn" id="attendance-btn" data-action="<?php echo ($attendance && $attendance['check_in'] && !$attendance['check_out']) ? 'checkout' : 'checkin'; ?>">
+                <div class="fingerprint-icon">
+                    <i class="fas fa-fingerprint"></i>
+                </div>
+                <div class="fingerprint-pulse"></div>
+            </button>
+            <p class="attendance-label">Check In | Check Out</p>
+        </div>
+
+        <!-- Working Hours Display -->
+        <div class="working-hours">
+            <div class="hours-info">
+                <span class="check-time">
+                    <?php
+                    if ($attendance && $attendance['check_in']) {
+                        echo date('H:i:s', strtotime($attendance['check_in']));
+                    } else {
+                        echo '--:--:--';
+                    }
+                    ?>
+                </span>
+                <span class="separator">-</span>
+                <span class="check-time checkout-time">
+                    <?php
+                    if ($attendance && $attendance['check_out']) {
+                        echo date('H:i:s', strtotime($attendance['check_out']));
+                    } else {
+                        echo '--:--:--';
+                    }
+                    ?>
+                </span>
+            </div>
+            <div class="hours-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: <?php echo min(($workingHours * 60 + $workingMinutes) / 480 * 100, 100); ?>%"></div>
+                </div>
+                <span class="hours-text"><?php echo $workingHours; ?> hr <?php echo $workingMinutes; ?> min</span>
+            </div>
+        </div>
+
+        <!-- Quick Action Buttons -->
+        <div class="quick-actions">
+            <button class="action-btn">
+                <i class="fas fa-pause"></i>
+                <span>Mulai Istirahat</span>
+                <small>- - -</small>
+            </button>
+            <button class="action-btn">
+                <i class="fas fa-clock"></i>
+                <span>Mulai Lembur</span>
+                <small>- - -</small>
+            </button>
+        </div>
+
+        <!-- Additional Actions -->
+        <div class="additional-actions">
+            <button class="text-btn" onclick="window.location.href='reports.php'">
+                <i class="fas fa-calendar-check"></i>
+                Visit Attendance
+            </button>
+            <button class="text-btn" onclick="window.location.href='reports.php'">
+                Visit History
+            </button>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <a href="dashboard.php" class="nav-item active">
+                <i class="fas fa-home"></i>
+            </a>
+            <a href="menu.php" class="nav-item nav-center">
+                <div class="center-icon">
+                    <i class="fas fa-th-large"></i>
+                </div>
+            </a>
+            <a href="#" class="nav-item">
+                <i class="fas fa-comment"></i>
+            </a>
+        </nav>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Toast Notification -->
+    <div id="toast" class="toast-notification"></div>
+
     <script src="script.js"></script>
 </body>
 </html>
