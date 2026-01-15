@@ -84,33 +84,82 @@ $attendance = $stmt->get_result()->fetch_assoc();
     </nav>
 
     <div class="container mt-4">
-        <h2>Selamat datang, <?php echo htmlspecialchars($user['name']); ?></h2>
+        <div class="row mb-4">
+            <div class="col">
+                <h2 class="text-white">Selamat datang, <?php echo htmlspecialchars($user['name']); ?></h2>
+            </div>
+        </div>
 
         <?php if ($message): ?>
-            <div class="alert alert-info"><?php echo $message; ?></div>
-            <script>alert('<?php echo addslashes($message); ?>');</script>
+            <div class="alert alert-info alert-dismissible fade show" role="alert">
+                <strong>Informasi:</strong> <?php echo htmlspecialchars($message); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
         <?php endif; ?>
 
         <div class="row">
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-header">
-                        <h5>Status Absen Hari Ini</h5>
+                        <h5 class="mb-0">Status Absen Hari Ini</h5>
                     </div>
                     <div class="card-body">
-                        <p><strong>Check In:</strong> <?php echo $attendance ? date('H:i:s', strtotime($attendance['check_in'])) : 'Belum'; ?></p>
-                        <p><strong>Check Out:</strong> <?php echo $attendance && $attendance['check_out'] ? date('H:i:s', strtotime($attendance['check_out'])) : 'Belum'; ?></p>
+                        <div class="status-info mb-3">
+                            <p class="mb-2"><strong>Tanggal:</strong> <?php echo date('d/m/Y'); ?></p>
+                            <p class="mb-2"><strong>Check In:</strong>
+                                <?php
+                                if ($attendance && $attendance['check_in']) {
+                                    echo '<span class="badge bg-success">' . date('H:i:s', strtotime($attendance['check_in'])) . '</span>';
+                                } else {
+                                    echo '<span class="badge bg-secondary">Belum Check In</span>';
+                                }
+                                ?>
+                            </p>
+                            <p class="mb-0"><strong>Check Out:</strong>
+                                <?php
+                                if ($attendance && $attendance['check_out']) {
+                                    echo '<span class="badge bg-danger">' . date('H:i:s', strtotime($attendance['check_out'])) . '</span>';
+                                } else {
+                                    echo '<span class="badge bg-secondary">Belum Check Out</span>';
+                                }
+                                ?>
+                            </p>
+                        </div>
+                        <?php if ($attendance && $attendance['check_in'] && $attendance['check_out']):
+                            $checkin_time = strtotime($attendance['check_in']);
+                            $checkout_time = strtotime($attendance['check_out']);
+                            $duration = $checkout_time - $checkin_time;
+                            $hours = floor($duration / 3600);
+                            $minutes = floor(($duration % 3600) / 60);
+                        ?>
+                        <div class="alert alert-success mb-0">
+                            <strong>Durasi Kerja:</strong> <?php echo $hours; ?> jam <?php echo $minutes; ?> menit
+                        </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-header">
-                        <h5>Aksi Absen</h5>
+                        <h5 class="mb-0">Aksi Absen</h5>
                     </div>
                     <div class="card-body">
-                        <button id="checkin-btn" class="btn btn-success me-2" <?php echo $attendance && $attendance['check_in'] ? 'disabled' : ''; ?>>Check In</button>
-                        <button id="checkout-btn" class="btn btn-danger" <?php echo !$attendance || !$attendance['check_in'] || $attendance['check_out'] ? 'disabled' : ''; ?>>Check Out</button>
+                        <div class="d-grid gap-2">
+                            <button id="checkin-btn" class="btn btn-success btn-lg" <?php echo $attendance && $attendance['check_in'] ? 'disabled' : ''; ?>>
+                                <span class="btn-text">Check In</span>
+                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                            </button>
+                            <button id="checkout-btn" class="btn btn-danger btn-lg" <?php echo !$attendance || !$attendance['check_in'] || $attendance['check_out'] ? 'disabled' : ''; ?>>
+                                <span class="btn-text">Check Out</span>
+                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                            </button>
+                        </div>
+                        <div class="mt-3">
+                            <small class="text-muted">
+                                Pastikan lokasi Anda aktif dan Anda berada di area yang ditentukan.
+                            </small>
+                        </div>
                     </div>
                 </div>
             </div>
