@@ -1,6 +1,25 @@
 document.addEventListener("DOMContentLoaded", function () {
+  const attendanceBtn = document.getElementById("attendance-btn");
   const checkinBtn = document.getElementById("checkin-btn");
   const checkoutBtn = document.getElementById("checkout-btn");
+  const clockTime = document.getElementById("clock-time");
+  const clockDate = document.getElementById("clock-date");
+
+  const workStart = document.getElementById("work-start");
+  const workDuration = document.getElementById("work-duration");
+  const workProgressBar = document.getElementById("work-progress-bar");
+
+  const breakBtn = document.getElementById("break-btn");
+  const overtimeBtn = document.getElementById("overtime-btn");
+
+  let state = window.__ATTENDANCE_STATE__ || null;
+
+  if (attendanceBtn) {
+    attendanceBtn.addEventListener("click", function () {
+      if (!state || !state.nextAction) return;
+      performAttendance(state.nextAction, attendanceBtn);
+    });
+  }
 
   if (checkinBtn) {
     checkinBtn.addEventListener("click", function () {
@@ -13,6 +32,95 @@ document.addEventListener("DOMContentLoaded", function () {
       performAttendance("checkout", checkoutBtn);
     });
   }
+
+  if (breakBtn) {
+    breakBtn.addEventListener("click", function () {
+      showAlert("Fitur istirahat belum tersedia.", "info");
+    });
+  }
+
+  if (overtimeBtn) {
+    overtimeBtn.addEventListener("click", function () {
+      showAlert("Fitur lembur belum tersedia.", "info");
+    });
+  }
+
+  function pad2(num) {
+    return String(num).padStart(2, "0");
+  }
+
+  function formatTime(isoString) {
+    if (!isoString) return "--:--:--";
+    const date = new Date(isoString.replace(" ", "T"));
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(
+      date.getSeconds()
+    )}`;
+  }
+
+  function updateClock() {
+    if (!clockTime && !clockDate) return;
+    const now = new Date();
+    if (clockTime) {
+      clockTime.textContent = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(
+        now.getSeconds()
+      )}`;
+    }
+
+    if (clockDate) {
+      const formatted = new Intl.DateTimeFormat("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "2-digit",
+      }).format(now);
+      clockDate.textContent = formatted;
+    }
+  }
+
+  function computeLiveDurationSeconds() {
+    if (!state || !state.checkIn) return 0;
+    if (state.checkOut) return state.durationSeconds || 0;
+
+    const checkIn = new Date(state.checkIn.replace(" ", "T"));
+    const now = new Date();
+    return Math.max(0, Math.floor((now.getTime() - checkIn.getTime()) / 1000));
+  }
+
+  function durationTextFromSeconds(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours} hr ${minutes} min`;
+  }
+
+  function updateDashboardUI() {
+    if (!state) return;
+
+    const durationSeconds = computeLiveDurationSeconds();
+    if (workStart) workStart.textContent = formatTime(state.checkIn);
+    if (workDuration) workDuration.textContent = durationTextFromSeconds(durationSeconds);
+
+    if (workProgressBar) {
+      const targetSeconds = 8 * 3600;
+      const pct = targetSeconds > 0 ? Math.min(100, (durationSeconds / targetSeconds) * 100) : 0;
+      workProgressBar.style.width = `${pct}%`;
+    }
+
+    if (attendanceBtn) {
+      if (!state.nextAction) {
+        attendanceBtn.disabled = true;
+        attendanceBtn.classList.add("is-disabled");
+      } else {
+        attendanceBtn.disabled = false;
+        attendanceBtn.classList.remove("is-disabled");
+      }
+    }
+  }
+
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  updateDashboardUI();
+  setInterval(updateDashboardUI, 10000);
 
   function performAttendance(action, button) {
     // Check if geolocation is supported
@@ -42,29 +150,37 @@ document.addEventListener("DOMContentLoaded", function () {
         formData.append("lat", lat);
         formData.append("lng", lng);
 
-        fetch("dashboard.php", {
+        fetch("dashboard.php?api=1", {
           method: "POST",
           body: formData,
+          headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            Accept: "application/json",
+          },
         })
           .then((response) => {
             if (!response.ok) {
-              throw new Error("Respons server tidak valid");
+              return response.json().then(
+                (payload) => {
+                  throw new Error(payload && payload.message ? payload.message : "Respons server tidak valid");
+                },
+                () => {
+                  throw new Error("Respons server tidak valid");
+                }
+              );
             }
-            return response.text();
+            return response.json();
           })
-          .then((data) => {
-            // Show success message
-            showAlert(
-              action === "checkin"
-                ? "Berhasil check in! Halaman akan dimuat ulang..."
-                : "Berhasil check out! Halaman akan dimuat ulang...",
-              "success"
-            );
+          .then((payload) => {
+            if (!payload || payload.ok !== true) {
+              throw new Error(payload && payload.message ? payload.message : "Gagal melakukan absen");
+            }
 
-            // Reload page after a short delay
-            setTimeout(function () {
-              location.reload();
-            }, 1500);
+            state = payload.state || state;
+            updateDashboardUI();
+
+            showAlert(payload.message || "Berhasil.", "success");
+            setButtonLoading(button, false);
           })
           .catch((error) => {
             console.error("Error:", error);
@@ -95,7 +211,8 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   function setButtonLoading(button, isLoading) {
-    const btnText = button.querySelector(".btn-text");
+    if (!button) return;
+    const btnText = button.querySelector(".btn-text") || button.querySelector(".finger-icon");
     const spinner = button.querySelector(".spinner-border");
 
     if (isLoading) {
@@ -120,13 +237,9 @@ document.addEventListener("DOMContentLoaded", function () {
     `;
 
     // Insert at the top of container
-    const container = document.querySelector(".container");
-    const firstElement = container.querySelector(".row");
-    if (firstElement) {
-      container.insertBefore(alertDiv, firstElement.nextSibling);
-    } else {
-      container.prepend(alertDiv);
-    }
+    const container =
+      document.getElementById("dashboard-alerts") || document.querySelector(".container");
+    if (container) container.prepend(alertDiv);
 
     // Auto dismiss after 5 seconds
     setTimeout(function () {

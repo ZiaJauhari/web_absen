@@ -16,6 +16,13 @@ if ($conn->connect_error) {
 // Start session
 session_start();
 
+function jsonResponse($payload, $statusCode = 200) {
+    http_response_code($statusCode);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload);
+    exit();
+}
+
 // Function to check if user is logged in
 function isLoggedIn() {
     return isset($_SESSION['user_id']);
@@ -36,9 +43,13 @@ function getCurrentUser() {
 }
 
 // Function to check if location is within allowed area
-function isLocationAllowed($lat, $lng, $allowedLat, $allowedLng, $radiusKm = 0.001) {
+function isLocationAllowed($lat, $lng, $allowedLat, $allowedLng, $radiusKm = 0.1) {
     if ($allowedLat === null || $allowedLng === null) {
         return true; // No location restriction
+    }
+
+    if (!is_numeric($lat) || !is_numeric($lng)) {
+        return false;
     }
 
     $earthRadius = 6371; // km
@@ -54,5 +65,12 @@ function isLocationAllowed($lat, $lng, $allowedLat, $allowedLng, $radiusKm = 0.0
     $distance = $earthRadius * $c;
 
     return $distance <= $radiusKm;
+}
+
+function formatDurationSeconds($seconds) {
+    $seconds = max(0, (int)$seconds);
+    $hours = (int) floor($seconds / 3600);
+    $minutes = (int) floor(($seconds % 3600) / 60);
+    return [$hours, $minutes];
 }
 ?>

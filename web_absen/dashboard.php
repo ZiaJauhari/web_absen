@@ -7,60 +7,141 @@ if (!isLoggedIn()) {
 }
 
 $user = getCurrentUser();
+
+$wantsJson = isset($_GET['api'])
+    || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
+    || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest');
+
+function getTodayAttendance($conn, $userId, $today) {
+    $sql = "SELECT * FROM attendance WHERE employee_id = ? AND date = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("is", $userId, $today);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc();
+}
+
+function buildAttendanceState($attendance) {
+    $checkInIso = ($attendance && $attendance['check_in']) ? $attendance['check_in'] : null;
+    $checkOutIso = ($attendance && $attendance['check_out']) ? $attendance['check_out'] : null;
+
+    $checkInTs = $checkInIso ? strtotime($checkInIso) : null;
+    $checkOutTs = $checkOutIso ? strtotime($checkOutIso) : null;
+
+    $nowTs = time();
+    $durationSeconds = 0;
+    if ($checkInTs && $checkOutTs) {
+        $durationSeconds = max(0, $checkOutTs - $checkInTs);
+    } elseif ($checkInTs) {
+        $durationSeconds = max(0, $nowTs - $checkInTs);
+    }
+    [$hours, $minutes] = formatDurationSeconds($durationSeconds);
+
+    $nextAction = null;
+    if (!$checkInIso) {
+        $nextAction = 'checkin';
+    } elseif (!$checkOutIso) {
+        $nextAction = 'checkout';
+    }
+
+    $targetSeconds = 8 * 3600;
+    $progressPercent = $targetSeconds > 0 ? min(100, ($durationSeconds / $targetSeconds) * 100) : 0;
+
+    return [
+        'checkIn' => $checkInIso,
+        'checkOut' => $checkOutIso,
+        'durationSeconds' => $durationSeconds,
+        'durationText' => $hours . ' hr ' . $minutes . ' min',
+        'progressPercent' => $progressPercent,
+        'nextAction' => $nextAction,
+    ];
+}
+
 $message = '';
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
-    $action = $_POST['action'];
-    $lat = $_POST['lat'];
-    $lng = $_POST['lng'];
+$today = date('Y-m-d');
 
-    // Check if location is allowed
-    if (!isLocationAllowed($lat, $lng, $user['location_lat'], $user['location_lng'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $action = $_POST['action'];
+    $lat = $_POST['lat'] ?? null;
+    $lng = $_POST['lng'] ?? null;
+
+    if ($action !== 'checkin' && $action !== 'checkout') {
+        if ($wantsJson) {
+            jsonResponse(['ok' => false, 'message' => 'Aksi tidak valid.'], 400);
+        }
+        $message = 'Aksi tidak valid.';
+    } elseif (!isLocationAllowed($lat, $lng, $user['location_lat'], $user['location_lng'])) {
+        if ($wantsJson) {
+            jsonResponse(['ok' => false, 'message' => 'Absen hanya bisa dilakukan di area yang ditentukan.'], 403);
+        }
         $message = 'Absen hanya bisa dilakukan di area yang ditentukan.';
     } else {
-        $today = date('Y-m-d');
         $now = date('Y-m-d H:i:s');
+        $attendance = getTodayAttendance($conn, $user['id'], $today);
 
-        // Check if already checked in today
-        $sql = "SELECT * FROM attendance WHERE employee_id = ? AND date = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("is", $user['id'], $today);
-        $stmt->execute();
-        $result = $stmt->get_result();
-
-        if ($result->num_rows == 0) {
-            // First check in
-            if ($action == 'checkin') {
+        if ($action === 'checkin') {
+            if ($attendance && $attendance['check_in']) {
+                $message = 'Anda sudah check in hari ini.';
+                if ($wantsJson) {
+                    jsonResponse(['ok' => false, 'message' => $message, 'state' => buildAttendanceState($attendance)], 409);
+                }
+            } else {
                 $sql = "INSERT INTO attendance (employee_id, check_in, date, location_lat, location_lng) VALUES (?, ?, ?, ?, ?)";
                 $stmt = $conn->prepare($sql);
-                $stmt->bind_param("issss", $user['id'], $now, $today, $lat, $lng);
-                $stmt->execute();
-                $message = 'Berhasil check in pada ' . date('H:i:s', strtotime($now));
+                $stmt->bind_param("issdd", $user['id'], $now, $today, $lat, $lng);
+                if (!$stmt->execute()) {
+                    if ($wantsJson) {
+                        jsonResponse(['ok' => false, 'message' => 'Gagal menyimpan check in.'], 500);
+                    }
+                    $message = 'Gagal menyimpan check in.';
+                } else {
+                    $message = 'Berhasil check in pada ' . date('H:i:s', strtotime($now));
+                    $attendance = getTodayAttendance($conn, $user['id'], $today);
+                    if ($wantsJson) {
+                        jsonResponse(['ok' => true, 'message' => $message, 'state' => buildAttendanceState($attendance)]);
+                    }
+                }
             }
-        } else {
-            $attendance = $result->fetch_assoc();
-            if ($action == 'checkout' && $attendance['check_out'] == null) {
-                $sql = "UPDATE attendance SET check_out = ?, location_lat = ?, location_lng = ? WHERE id = ?";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("sssi", $now, $lat, $lng, $attendance['id']);
-                $stmt->execute();
-                $message = 'Berhasil check out pada ' . date('H:i:s', strtotime($now));
-            } elseif ($action == 'checkin') {
-                $message = 'Anda sudah check in hari ini.';
-            } else {
+        }
+
+        if ($action === 'checkout') {
+            if (!$attendance || !$attendance['check_in']) {
+                $message = 'Anda belum check in hari ini.';
+                if ($wantsJson) {
+                    jsonResponse(['ok' => false, 'message' => $message, 'state' => buildAttendanceState($attendance)], 409);
+                }
+            } elseif ($attendance['check_out']) {
                 $message = 'Anda sudah check out hari ini.';
+                if ($wantsJson) {
+                    jsonResponse(['ok' => false, 'message' => $message, 'state' => buildAttendanceState($attendance)], 409);
+                }
+            } else {
+                $sql = "UPDATE attendance SET check_out = ? WHERE id = ?";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param("si", $now, $attendance['id']);
+                if (!$stmt->execute()) {
+                    if ($wantsJson) {
+                        jsonResponse(['ok' => false, 'message' => 'Gagal menyimpan check out.'], 500);
+                    }
+                    $message = 'Gagal menyimpan check out.';
+                } else {
+                    $message = 'Berhasil check out pada ' . date('H:i:s', strtotime($now));
+                    $attendance = getTodayAttendance($conn, $user['id'], $today);
+                    if ($wantsJson) {
+                        jsonResponse(['ok' => true, 'message' => $message, 'state' => buildAttendanceState($attendance)]);
+                    }
+                }
             }
         }
     }
 }
 
-// Get today's attendance
-$today = date('Y-m-d');
-$sql = "SELECT * FROM attendance WHERE employee_id = ? AND date = ?";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("is", $user['id'], $today);
-$stmt->execute();
-$attendance = $stmt->get_result()->fetch_assoc();
+$attendance = getTodayAttendance($conn, $user['id'], $today);
+$state = buildAttendanceState($attendance);
+
+if ($wantsJson && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    jsonResponse(['ok' => true, 'state' => $state]);
+}
 ?>
 
 <!DOCTYPE html>
@@ -72,100 +153,80 @@ $attendance = $stmt->get_result()->fetch_assoc();
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container">
-            <a class="navbar-brand" href="#">Sistem Absen</a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="reports.php">Laporan</a>
-                <a class="nav-link" href="logout.php">Logout</a>
+<body class="dashboard-body">
+    <header class="dashboard-header">
+        <div class="user-chip">
+            <div class="user-avatar">
+                <?php echo strtoupper(substr($user['name'], 0, 1)); ?>
+            </div>
+            <div class="user-meta">
+                <div class="user-name"><?php echo htmlspecialchars($user['name']); ?></div>
+                <div class="user-email"><?php echo htmlspecialchars($user['email']); ?></div>
             </div>
         </div>
-    </nav>
+        <a class="notif-btn" href="reports.php" aria-label="Notifikasi / History">
+            History
+        </a>
+    </header>
 
-    <div class="container mt-4">
-        <div class="row mb-4">
-            <div class="col">
-                <h2 class="text-white">Selamat datang, <?php echo htmlspecialchars($user['name']); ?></h2>
-            </div>
+    <main class="dashboard-main">
+        <div class="clock-wrap">
+            <div class="clock-logo" aria-hidden="true">Absen</div>
+            <div class="clock-time" id="clock-time">--:--:--</div>
+            <div class="clock-date" id="clock-date"><?php echo date('l, F j, Y'); ?></div>
         </div>
 
+        <div class="finger-wrap">
+            <button id="attendance-btn" class="finger-btn" type="button">
+                <span class="finger-icon" aria-hidden="true">⟲</span>
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            </button>
+            <div class="finger-label">Check In | Check Out</div>
+        </div>
+
+        <section class="work-card">
+            <div class="work-meta">
+                <div class="work-start" id="work-start">--:--:--</div>
+                <div class="work-duration" id="work-duration">0 hr 0 min</div>
+            </div>
+            <div class="work-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+                <div class="work-progress-bar" id="work-progress-bar"></div>
+            </div>
+        </section>
+
+        <div class="quick-actions">
+            <button class="quick-btn" id="break-btn" type="button">Mulai Istirahat</button>
+            <button class="quick-btn" id="overtime-btn" type="button">Mulai Lembur</button>
+        </div>
+
+        <div class="nav-actions">
+            <a class="nav-btn" href="dashboard.php">Visit Attendance</a>
+            <a class="nav-btn" href="reports.php">Visit History</a>
+        </div>
+
+        <div class="dash-hint">
+            Pastikan lokasi aktif dan berada di area yang ditentukan.
+        </div>
+    </main>
+
+    <div class="dashboard-alerts" id="dashboard-alerts">
         <?php if ($message): ?>
             <div class="alert alert-info alert-dismissible fade show" role="alert">
-                <strong>Informasi:</strong> <?php echo htmlspecialchars($message); ?>
+                <strong>Info:</strong> <?php echo htmlspecialchars($message); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
-
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Status Absen Hari Ini</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="status-info mb-3">
-                            <p class="mb-2"><strong>Tanggal:</strong> <?php echo date('d/m/Y'); ?></p>
-                            <p class="mb-2"><strong>Check In:</strong>
-                                <?php
-                                if ($attendance && $attendance['check_in']) {
-                                    echo '<span class="badge bg-success">' . date('H:i:s', strtotime($attendance['check_in'])) . '</span>';
-                                } else {
-                                    echo '<span class="badge bg-secondary">Belum Check In</span>';
-                                }
-                                ?>
-                            </p>
-                            <p class="mb-0"><strong>Check Out:</strong>
-                                <?php
-                                if ($attendance && $attendance['check_out']) {
-                                    echo '<span class="badge bg-danger">' . date('H:i:s', strtotime($attendance['check_out'])) . '</span>';
-                                } else {
-                                    echo '<span class="badge bg-secondary">Belum Check Out</span>';
-                                }
-                                ?>
-                            </p>
-                        </div>
-                        <?php if ($attendance && $attendance['check_in'] && $attendance['check_out']):
-                            $checkin_time = strtotime($attendance['check_in']);
-                            $checkout_time = strtotime($attendance['check_out']);
-                            $duration = $checkout_time - $checkin_time;
-                            $hours = floor($duration / 3600);
-                            $minutes = floor(($duration % 3600) / 60);
-                        ?>
-                        <div class="alert alert-success mb-0">
-                            <strong>Durasi Kerja:</strong> <?php echo $hours; ?> jam <?php echo $minutes; ?> menit
-                        </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Aksi Absen</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-grid gap-2">
-                            <button id="checkin-btn" class="btn btn-success btn-lg" <?php echo $attendance && $attendance['check_in'] ? 'disabled' : ''; ?>>
-                                <span class="btn-text">Check In</span>
-                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                            </button>
-                            <button id="checkout-btn" class="btn btn-danger btn-lg" <?php echo !$attendance || !$attendance['check_in'] || $attendance['check_out'] ? 'disabled' : ''; ?>>
-                                <span class="btn-text">Check Out</span>
-                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                            </button>
-                        </div>
-                        <div class="mt-3">
-                            <small class="text-muted">
-                                Pastikan lokasi Anda aktif dan Anda berada di area yang ditentukan.
-                            </small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 
+    <nav class="bottom-nav" aria-label="Bottom Navigation">
+        <a class="bottom-item is-active" href="dashboard.php">Home</a>
+        <a class="bottom-item" href="reports.php">History</a>
+        <a class="bottom-item" href="logout.php">Logout</a>
+    </nav>
+
+    <script>
+      window.__ATTENDANCE_STATE__ = <?php echo json_encode($state); ?>;
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="script.js"></script>
 </body>

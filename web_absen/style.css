@@ -6,6 +6,245 @@ body {
   padding-bottom: 2rem;
 }
 
+/* Dashboard (dark mobile) */
+.dashboard-body {
+  background: radial-gradient(circle at 20% 0%, #0e5b5c 0%, #0b2b33 35%, #081a2a 100%);
+  color: rgba(255, 255, 255, 0.92);
+  padding-bottom: 80px;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 16px 8px;
+}
+
+.user-chip {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.user-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.1;
+}
+
+.user-email {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.notif-btn {
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.dashboard-main {
+  padding: 6px 16px 18px;
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.clock-wrap {
+  text-align: center;
+  margin-top: 10px;
+}
+
+.clock-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  margin: 0 auto 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.16);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  opacity: 0.8;
+}
+
+.clock-time {
+  font-size: 3.2rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.clock-date {
+  opacity: 0.75;
+  margin-top: 6px;
+  font-size: 0.9rem;
+}
+
+.finger-wrap {
+  margin-top: 22px;
+  text-align: center;
+}
+
+.finger-btn {
+  width: 92px;
+  height: 92px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(143, 214, 162, 0.45);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 1.6rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.30);
+  transition: transform 0.12s ease;
+}
+
+.finger-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.finger-btn.is-disabled,
+.finger-btn:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.finger-label {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.work-card {
+  margin-top: 18px;
+  padding: 14px 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.work-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
+
+.work-start {
+  opacity: 0.9;
+}
+
+.work-duration {
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.work-progress {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.work-progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(78, 203, 196, 0.9) 0%, rgba(68, 148, 255, 0.9) 100%);
+  transition: width 0.4s ease;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.quick-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.14);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 10px 12px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+}
+
+.nav-actions {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.nav-btn {
+  text-align: center;
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.92);
+  padding: 12px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dash-hint {
+  text-align: center;
+  margin-top: 12px;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.dashboard-alerts {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 72px;
+  padding: 0 16px;
+  max-width: 520px;
+  margin: 0 auto;
+  z-index: 1050;
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-around;
+  padding: 10px 10px 14px;
+  background: rgba(12, 16, 30, 0.92);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
+}
+
+.bottom-item {
+  color: rgba(255, 255, 255, 0.78);
+  text-decoration: none;
+  font-size: 0.9rem;
+  padding: 8px 12px;
+  border-radius: 999px;
+}
+
+.bottom-item.is-active {
+  background: rgba(95, 244, 210, 0.14);
+  color: rgba(255, 255, 255, 0.92);
+}
+
 /* Navbar Styles */
 .navbar {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
